@@ -1,0 +1,9 @@
+node_modules/
+*.pem
+*.log
+# Internal: deployment identifiers, proxy architecture and findings.
+# These stay local — they name internal hosts, accounts and infrastructure.
+LIVE.md
+DEPLOY.md
+TESTING.md
+PROXY-FINDINGS.md

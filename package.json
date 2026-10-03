@@ -1,0 +1,14 @@
+{
+  "name": "mock-stream-product",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mock third-party SaaS serving Server-Sent Events and WebSocket, for testing proxy relay of long-lived connections",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/check.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
