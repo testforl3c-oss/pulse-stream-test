@@ -426,9 +426,15 @@ function cookieReadback(req, res) {
         probeCookiesReceived: probes.length,
         probes,
         allCookieNames: Object.keys(got),
-        verdict: probes.length === 0
-            ? 'NO probe cookies arrived — Set-Cookie did not survive, or the browser rejected every one'
-            : `${probes.length} arrived; any missing size was dropped between origin and browser`,
+        // Distinguish "the probe was never run" from "the probe ran and nothing survived" -
+        // both show zero cookies, and conflating them invites a false conclusion.
+        verdict: probes.length > 0
+            ? `${probes.length} probe cookie(s) arrived; any missing size was dropped in transit`
+            : Object.keys(got).length === 0
+                ? 'No cookies at all on this request — hit /api/cookie-probe first (it 302s here). '
+                  + 'This is not a result.'
+                : 'Other cookies present but NO probe cookies — Set-Cookie did not survive, '
+                  + 'or the client rejected every one',
     });
 }
 
