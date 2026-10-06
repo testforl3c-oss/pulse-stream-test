@@ -378,7 +378,8 @@ function cookieProbe(req, res, url) {
 
     const domain = url.searchParams.get('domain');          // omit => host-only
     const sameSite = url.searchParams.get('samesite') || 'None';
-    const target = url.searchParams.get('to') || 'api/cookies';
+    // Absolute path: a relative Location resolves against /api/ and yields /api/api/cookies.
+    const target = url.searchParams.get('to') || '/api/cookies';
 
     const cookies = sizes.map((size, i) => {
         const name = `zrpProbe${i + 1}_${size}`;
