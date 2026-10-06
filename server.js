@@ -396,12 +396,20 @@ function cookieProbe(req, res, url) {
         return attrs.join('; ');
     });
 
-    res.writeHead(302, {
-        'set-cookie': cookies,
-        'cache-control': 'no-store, private',
-        location: target,
-        'content-length': 0,
-    });
+    // Flags to isolate which part of the response an intermediary objects to.
+    const status = Number(url.searchParams.get('status') || 302);
+    const withCookies = url.searchParams.get('cookie') !== '0';
+    const withCache = url.searchParams.get('cache') !== '0';
+    const withLen = url.searchParams.get('clen') !== '0';
+    const withLocation = status >= 300 && status < 400;
+
+    const headers = {};
+    if (withCookies) headers['set-cookie'] = cookies;
+    if (withCache) headers['cache-control'] = 'no-store, private';
+    if (withLocation) headers.location = target;
+    if (withLen) headers['content-length'] = 0;
+
+    res.writeHead(status, headers);
     res.end();
 
     log('cookie probe: 302 with', cookies.length, 'Set-Cookie headers,',
