@@ -358,6 +358,79 @@ function openChat(req, socket, url) {
 
 // ---- static + routing -------------------------------------------------------
 
+// ---- Set-Cookie survival probe -------------------------------------------------
+// Reproduces the shape of a SAML session-issuing response: a 302 that carries Set-Cookie
+// headers and no body. Emits several probe cookies of different sizes in one response, so
+// a size-based cap is distinguishable from wholesale Set-Cookie stripping.
+//
+// Deliberately self-verifying: the redirect lands on /api/cookies, which reports what
+// actually arrived. One navigation gives the answer.
+//
+// Note on Domain: a Set-Cookie whose Domain does not cover the serving host is dropped by
+// the browser without comment, which looks identical to an intermediary stripping it. The
+// default here is host-only (no Domain attribute) to keep the probe honest; pass ?domain=
+// only when it genuinely covers the host you are testing.
+function cookieProbe(req, res, url) {
+    const sizes = (url.searchParams.get('sizes') || '16,512,1199,1558')
+        .split(',')
+        .map((n) => Number(n.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0 && n <= 8000);
+
+    const domain = url.searchParams.get('domain');          // omit => host-only
+    const sameSite = url.searchParams.get('samesite') || 'None';
+    const target = url.searchParams.get('to') || 'api/cookies';
+
+    const cookies = sizes.map((size, i) => {
+        const name = `zrpProbe${i + 1}_${size}`;
+        // Value padded to exactly `size` bytes so the header length is predictable.
+        const value = 'x'.repeat(Math.max(1, size));
+        const attrs = [
+            `${name}=${value}`,
+            domain ? `Domain=${domain}` : null,
+            'Path=/',
+            'Secure',
+            `SameSite=${sameSite}`,
+            i % 2 === 1 ? 'HttpOnly' : null,   // alternate, mirroring the real pair
+        ].filter(Boolean);
+        return attrs.join('; ');
+    });
+
+    res.writeHead(302, {
+        'set-cookie': cookies,
+        'cache-control': 'no-store, private',
+        location: target,
+        'content-length': 0,
+    });
+    res.end();
+
+    log('cookie probe: 302 with', cookies.length, 'Set-Cookie headers,',
+        'sizes=[' + sizes.join(',') + ']',
+        'bytes=[' + cookies.map((c) => Buffer.byteLength(c)).join(',') + ']');
+}
+
+// Readback: what the browser actually holds and sent us.
+function cookieReadback(req, res) {
+    const got = parseCookies(req);
+    const probes = Object.entries(got)
+        .filter(([name]) => name.startsWith('zrpProbe'))
+        .map(([name, value]) => ({
+            name,
+            declaredSize: Number(name.split('_')[1]) || null,
+            receivedSize: value.length,
+            intact: Number(name.split('_')[1]) === value.length,
+        }))
+        .sort((a, b) => (a.declaredSize || 0) - (b.declaredSize || 0));
+
+    json(res, 200, {
+        probeCookiesReceived: probes.length,
+        probes,
+        allCookieNames: Object.keys(got),
+        verdict: probes.length === 0
+            ? 'NO probe cookies arrived — Set-Cookie did not survive, or the browser rejected every one'
+            : `${probes.length} arrived; any missing size was dropped between origin and browser`,
+    });
+}
+
 function serveStatic(req, res, url) {
     const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     const file = path.join(PUBLIC_DIR, rel);
@@ -388,6 +461,8 @@ function handle(req, res) {
         case 'POST /api/messages':   return postMessage(req, res);
         case 'POST /api/feed/negotiate': return negotiateFeed(req, res);
         case 'GET /api/feed':        return openFeed(req, res, url);
+        case 'GET /api/cookie-probe': return cookieProbe(req, res, url);
+        case 'GET /api/cookies':     return cookieReadback(req, res);
         default:
             if (req.method === 'GET') return serveStatic(req, res, url);
             return json(res, 405, { error: 'method not allowed' });
@@ -416,4 +491,5 @@ server.listen(PORT, '0.0.0.0', () => {
     log(`  chat          ${TLS_KEY ? 'wss' : 'ws'}  /api/chat   (WebSocket)`);
     log(`  notifications POST /api/feed/negotiate -> GET /api/feed  (text/event-stream)`);
     log(`  feed recycles every ${FEED_LIFETIME_MS}ms, chat every ${CHAT_LIFETIME_MS}ms`);
+    log(`  cookie probe  GET /api/cookie-probe  -> 302 + Set-Cookie, lands on /api/cookies`);
 });
